@@ -1,5 +1,5 @@
 // Import necessary modules
-const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder, MessageAttachment } = require('discord.js');
 const fs = require('fs');
 const { createCanvas, loadImage } = require('canvas');
 require('dotenv').config();
@@ -100,18 +100,65 @@ const getRandomDefaultSkin = () => {
     return DEFAULT_PET_SKINS[randomIndex];
 };
 
+// Function to create the pet overlay image
+const createPetOverlay = async (userAvatarUrl, petImageUrl) => {
+    try {
+        const avatarImage = await loadImage(userAvatarUrl); // Load avatar as png
+        const petImage = await loadImage(petImageUrl); // Load pet image as png
+
+        const canvas = createCanvas(avatarImage.width, avatarImage.height);
+        const ctx = canvas.getContext('2d');
+
+        // Draw the user avatar
+        ctx.drawImage(avatarImage, 0, 0);
+
+        // Draw the pet image on top
+        const petX = 20; // X position for pet image
+        const petY = 20; // Y position for pet image
+        const petWidth = 100; // Pet image width
+        const petHeight = 100; // Pet image height
+        ctx.drawImage(petImage, petX, petY, petWidth, petHeight);
+
+        return canvas.toBuffer(); // Return the image buffer
+    } catch (error) {
+        console.error('Error in createPetOverlay:', error); // Log the error for debugging
+        throw error; // Re-throw the error
+    }
+};
+
 client.once('ready', () => {
     console.log(`Logged in as ${client.user.tag}!`);
 });
 
 // Main message handler
-client.on('messageCreate', (message) => {
+client.on('messageCreate', async (message) => {
     if (!message.content.startsWith('!') || message.author.bot) return;
 
     const [command, ...args] = message.content.slice(1).split(/\s+/);
     const userId = message.author.id;
 
     switch (command.toLowerCase()) {
+        // ... existing cases, like 'inventory', 'coins', 'adopt', etc.
+
+        case 'petoverlay': {
+            const pet = pets[userId];
+            if (!pet) return message.reply("You don't have a pet yet! Use `!adopt` to adopt one.");
+        
+            const userAvatarUrl = message.author.displayAvatarURL({ format: 'png', size: 1024 });
+            const petImageUrl = pet.skin;
+        
+            console.log('User Avatar URL:', userAvatarUrl);
+            console.log('Pet Image URL:', petImageUrl);
+        
+            try {
+                const overlayBuffer = await createPetOverlay(userAvatarUrl, petImageUrl);
+                const attachment = new MessageAttachment(overlayBuffer, 'pet-overlay.png');
+                return message.channel.send({ files: [attachment] });
+            } catch (error) {
+                console.error('Error creating pet overlay:', error);
+                return message.reply("There was an error creating the pet overlay. Please ensure your pet's skin image URL is valid.");
+            }
+        }
         case 'inventory': {
             const pet = pets[userId];
             if (!pet) return message.reply("You don't have a pet yet! Use `!adopt` to adopt one.");
