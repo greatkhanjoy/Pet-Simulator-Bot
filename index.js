@@ -17,9 +17,14 @@ const SHOP_ITEMS = [
 
 // Default skins for pets
 const DEFAULT_PET_SKINS = [
-  'path/to/skin1.png',
-  'path/to/skin2.png',
-  'path/to/skin3.png',
+  'https://cdn-icons-png.freepik.com/512/1998/1998592.png',
+  'https://cdn-icons-png.freepik.com/512/1818/1818310.png',
+  'https://cdn-icons-png.freepik.com/512/1998/1998627.png',
+  'https://cdn-icons-png.freepik.com/512/4540/4540789.png',
+  'https://cdn-icons-png.freepik.com/512/8628/8628367.png',
+  'https://cdn-icons-png.freepik.com/512/7016/7016378.png',
+  'https://cdn-icons-png.freepik.com/512/4139/4139168.png',
+  'https://cdn-icons-png.freepik.com/512/11251/11251005.png',
 ];
 
 // Load pets from JSON file
@@ -151,10 +156,10 @@ client.on('messageCreate', (message) => {
 
     case 'feed': {
       const pet = pets[userId];
-      if (!pet) return message.reply('You don't have a pet yet! Use `!adopt` to adopt one.');
+      if (!pet) return message.reply('You don\'t have a pet yet! Use `!adopt` to adopt one.');
 
       const foodCount = pet.items['Food'] || 0;
-      if (foodCount <= 0) return message.reply('You don't have any food to feed your pet!');
+      if (foodCount <= 0) return message.reply('You don\'t have any food to feed your pet!');
 
       // Feed the pet
       pet.hunger = Math.max(0, pet.hunger - 10);
