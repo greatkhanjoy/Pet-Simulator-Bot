@@ -3,8 +3,7 @@
     "name": "Fluffy",
     "level": 1,
     "hunger": 0,
-    "items": [
-      "Food"
-    ]
+    "items": [],
+    "coins": null
   }
 }

@@ -63,13 +63,30 @@ const getLeaderboard = () => {
 
 // Set up daily rewards
 const claimDailyReward = (userId) => {
-  if (dailyRewards[userId] && new Date().getTime() - dailyRewards[userId] < 86400000) {
-    return false; // User has already claimed today
-  }
-  dailyRewards[userId] = new Date().getTime();
-  saveDailyRewards();
-  return true; // User can claim
-};
+    if (dailyRewards[userId] && new Date().getTime() - dailyRewards[userId] < 86400000) {
+      return false; // User has already claimed today
+    }
+  
+    // Generate a random reward
+    const randomNum = Math.random() * 100;
+    let reward;
+  
+    if (randomNum < 5) { // 5% chance for coins
+      reward = { type: 'coins', amount: Math.floor(Math.random() * 20) + 1 }; // Random coin amount
+      pets[userId].coins += reward.amount; // Add coins to user
+    } else if (randomNum < 90) { // 85% chance for food
+      reward = { type: 'food', amount: 1 }; // Always 1 food
+      pets[userId].items['Food'] = (pets[userId].items['Food'] || 0) + 1; // Increment food count
+    } else { // 10% chance for a toy
+      reward = { type: 'toy', amount: 1 }; // Always 1 toy
+      pets[userId].items['Toy'] = (pets[userId].items['Toy'] || 0) + 1; // Increment toy count
+    }
+  
+    dailyRewards[userId] = new Date().getTime(); // Update last claimed time
+    saveDailyRewards(); // Save daily rewards data
+  
+    return reward; // Return the reward for acknowledgment
+  };
 
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}!`);
@@ -83,15 +100,41 @@ client.on('messageCreate', (message) => {
   const userId = message.author.id;
 
   switch (command.toLowerCase()) {
-    case 'adopt': {
-      const petName = args.join(' ');
-      if (!petName) return message.reply('Please specify a name for your pet!');
-
-      if (pets[userId]) return message.reply('You already have a pet!');
-      pets[userId] = { name: petName, level: 1, hunger: 0, items: [] };
-      savePets();
-      return message.reply(`Congratulations! You adopted a pet named **${petName}**! 🎉`);
-    }
+    case 'inventory': {
+        const pet = pets[userId];
+        if (!pet) return message.reply("You don't have a pet yet! Use `!adopt` to adopt one.");
+    
+        const inventoryList = Object.entries(pet.items).map(([item, quantity]) => `${item}: ${quantity}`).join(', ') || 'No items in your inventory.';
+        return message.reply(`Your inventory:\n${inventoryList}`);
+      }
+  
+      case 'coins': {
+        const pet = pets[userId];
+        if (!pet) return message.reply("You don't have a pet yet! Use `!adopt` to adopt one.");
+        
+        // Check if coins are defined and accessible, default to 0 if not
+        const coins = pet.coins || 0;
+        
+        return message.reply(`You have **${coins}** coins.`);
+      }
+      case 'adopt': {
+        const petName = args.join(' ');
+        if (!petName) return message.reply('Please specify a name for your pet!');
+      
+        if (pets[userId]) return message.reply('You already have a pet!');
+      
+        // Initialize the pet with coins and ensure items is an object
+        pets[userId] = { 
+          name: petName, 
+          level: 1, 
+          hunger: 0, 
+          items: {}, // Changed to an object instead of an array
+          coins: 0   // Initialize coins to 0
+        };
+        
+        savePets();
+        return message.reply(`Congratulations! You adopted a pet named **${petName}**! 🎉`);
+      }
 
     case 'pet': {
       const pet = pets[userId];
@@ -100,13 +143,20 @@ client.on('messageCreate', (message) => {
     }
 
     case 'feed': {
-      const pet = pets[userId];
-      if (!pet) return message.reply('You don't have a pet yet! Use `!adopt` to adopt one.');
-      pet.hunger = Math.max(0, pet.hunger - 10);
-      pet.level += 1;
-      savePets();
-      return message.reply(`You fed **${pet.name}**! Their hunger decreased and they leveled up! 🎉\n${formatPet(pet)}`);
-    }
+        const pet = pets[userId];
+        if (!pet) return message.reply('You don\'t have a pet yet! Use `!adopt` to adopt one.');
+      
+        // Ensure the quantity is tracked appropriately
+        const foodCount = pet.items['Food'] || 0; // Default to 0 if no food present
+        if (foodCount <= 0) return message.reply('You don\'t have any food to feed your pet!');
+      
+        // Feed the pet
+        pet.hunger = Math.max(0, pet.hunger - 10);
+        pet.level += 1;
+        pet.items['Food'] -= 1; // Decrease food count by 1
+        savePets(); // Save the updated pet data
+        return message.reply(`You fed **${pet.name}**! Their hunger decreased and they leveled up! 🎉\n${formatPet(pet)}`);
+      }
 
     case 'gift': {
       const [targetMention, ...itemArr] = args;
@@ -114,7 +164,7 @@ client.on('messageCreate', (message) => {
       if (!targetMention || !item) return message.reply('Usage: `!gift @user item`.');
       const targetId = targetMention.replace(/[^0-9]/g, '');
       const targetPet = pets[targetId];
-      if (!targetPet) return message.reply('The mentioned user doesn't have a pet.');
+      if (!targetPet) return message.reply('The mentioned user doesn\'t have a pet.');
       targetPet.items.push(item);
       savePets();
       return message.reply(`You gifted **${item}** to **${targetPet.name}**! 🎁`);
@@ -141,18 +191,19 @@ client.on('messageCreate', (message) => {
     }
 
     case 'dailyreward': {
-      if (claimDailyReward(userId)) {
-        const food = 'Food'; // You can change the type or randomize it
-        if (pets[userId]) {
-          pets[userId].items.push(food);
-          savePets();
-          return message.reply(`You claimed your daily reward: **${food}**! 🎉`);
+        const reward = claimDailyReward(userId);
+        if (reward) {
+          if (reward.type === 'coins') {
+            return message.reply(`You claimed your daily reward: **${reward.amount} coins**! 🎉`);
+          } else if (reward.type === 'food') {
+            return message.reply(`You claimed your daily reward: **1 Food**! 🎉`);
+          } else if (reward.type === 'toy') {
+            return message.reply(`You claimed your daily reward: **1 Toy**! 🎉`);
+          }
+        } else {
+          return message.reply('You have already claimed your daily reward. Please come back tomorrow!');
         }
-        return message.reply(`You claimed your daily reward: **${food}**! But you don't have a pet yet.`);
-      } else {
-        return message.reply('You have already claimed your daily reward. Please come back tomorrow!');
       }
-    }
 
     case 'shop': {
       const shopList = SHOP_ITEMS.map(item => `🛒 **${item.name}** - Price: ${item.price} coins`).join('\n');
@@ -160,22 +211,23 @@ client.on('messageCreate', (message) => {
     }
 
     case 'buy': {
-      const itemName = args.join(' ');
-      const item = SHOP_ITEMS.find(i => i.name.toLowerCase() === itemName.toLowerCase());
-      if (!item) return message.reply('Item not found in the shop.');
-      if (!pets[userId]) return message.reply('You need to adopt a pet first!');
-      // Placeholder for checking in-bot currency; you could integrate an actual balance system
-      const userCurrency = 20; // For demo purposes, can be replaced with a real user balance logic
-
-      if (userCurrency < item.price) {
-        return message.reply('You do not have enough coins to buy this item.');
+        const itemName = args.join(' ');
+        const item = SHOP_ITEMS.find(i => i.name.toLowerCase() === itemName.toLowerCase());
+      
+        if (!item) return message.reply('Item not found in the shop.');
+        if (!pets[userId]) return message.reply('You need to adopt a pet first!');
+      
+        // Check if the user has enough coins
+        if (pets[userId].coins < item.price) {
+          return message.reply('You do not have enough coins to buy this item.');
+        }
+      
+        // Deduct coins and add item
+        pets[userId].items[item.name] = (pets[userId].items[item.name] || 0) + 1; // Update item count
+        pets[userId].coins -= item.price; // Deduct item price from user coins
+        savePets();
+        return message.reply(`You bought **${item.name}** for ${item.price} coins! 🎉`);
       }
-
-      // Deducting coins and adding items would go here
-      pets[userId].items.push(item.name);
-      savePets();
-      return message.reply(`You bought **${item.name}** for ${item.price} coins! 🎉`);
-    }
 
     case 'leaderboard': {
       const leaderboard = getLeaderboard();
