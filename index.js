@@ -1,11 +1,17 @@
 // Import necessary modules
-const { Client, GatewayIntentBits, Collection } = require('discord.js');
+const { Client, GatewayIntentBits } = require('discord.js');
 const fs = require('fs');
+const { setInterval } = require('timers');
 require('dotenv').config();
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
 
-// Data storage file
+// Data storage files
 const PETS_FILE = 'pets.json';
+const DAILY_REWARDS_FILE = 'daily_rewards.json';
+const SHOP_ITEMS = [
+  { name: 'Food', price: 5, type: 'food' },
+  { name: 'Toy', price: 10, type: 'item' },
+];
 
 // Load pets from JSON file
 let pets = {};
@@ -17,7 +23,17 @@ if (fs.existsSync(PETS_FILE)) {
   }
 }
 
-// Save pets to JSON file
+// Daily rewards tracking
+let dailyRewards = {};
+if (fs.existsSync(DAILY_REWARDS_FILE)) {
+  try {
+    dailyRewards = JSON.parse(fs.readFileSync(DAILY_REWARDS_FILE));
+  } catch (error) {
+    console.error('Error reading daily rewards data:', error);
+  }
+}
+
+// Save pets and daily reward states to JSON file
 const savePets = () => {
   try {
     fs.writeFileSync(PETS_FILE, JSON.stringify(pets, null, 2));
@@ -26,8 +42,35 @@ const savePets = () => {
   }
 };
 
+const saveDailyRewards = () => {
+  try {
+    fs.writeFileSync(DAILY_REWARDS_FILE, JSON.stringify(dailyRewards, null, 2));
+  } catch (error) {
+    console.error('Error saving daily rewards data:', error);
+  }
+};
+
 // Helper: Format pet details
 const formatPet = (pet) => `🐾 **Name:** ${pet.name}\n✨ **Level:** ${pet.level}\n🍗 **Hunger:** ${pet.hunger}\n🎒 **Items:** ${pet.items.join(', ') || 'None'}`;
+
+// Helper: Get leaderboard
+const getLeaderboard = () => {
+  const leaderboard = Object.entries(pets)
+    .sort(([, a], [, b]) => b.level - a.level)
+    .map(([userId, pet]) => `<@${userId}>: **${pet.name}** (Level: ${pet.level})`)
+    .join('\n');
+  return leaderboard || 'No pets available.';
+};
+
+// Set up daily rewards
+const claimDailyReward = (userId) => {
+  if (dailyRewards[userId] && new Date().getTime() - dailyRewards[userId] < 86400000) {
+    return false; // User has already claimed today
+  }
+  dailyRewards[userId] = new Date().getTime();
+  saveDailyRewards();
+  return true; // User can claim
+};
 
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}!`);
@@ -53,14 +96,14 @@ client.on('messageCreate', (message) => {
 
     case 'pet': {
       const pet = pets[userId];
-      if (!pet) return message.reply('You don\'t have a pet yet! Use `!adopt` to adopt one.');
+      if (!pet) return message.reply('You don't have a pet yet! Use `!adopt` to adopt one.');
 
       return message.reply(formatPet(pet));
     }
 
     case 'feed': {
       const pet = pets[userId];
-      if (!pet) return message.reply('You don\'t have a pet yet! Use `!adopt` to adopt one.');
+      if (!pet) return message.reply('You don't have a pet yet! Use `!adopt` to adopt one.');
 
       pet.hunger = Math.max(0, pet.hunger - 10);
       pet.level += 1;
@@ -71,11 +114,11 @@ client.on('messageCreate', (message) => {
     case 'gift': {
       const [targetMention, ...itemArr] = args;
       const item = itemArr.join(' ');
-      if (!targetMention || !item) return message.reply('Usage: `!gift @user item`');
+      if (!targetMention || !item) return message.reply('Usage: `!gift @user item`.');
 
       const targetId = targetMention.replace(/[^0-9]/g, '');
       const targetPet = pets[targetId];
-      if (!targetPet) return message.reply('The mentioned user doesn\'t have a pet.');
+      if (!targetPet) return message.reply('The mentioned user doesn't have a pet.');
 
       targetPet.items.push(item);
       savePets();
@@ -92,7 +135,7 @@ client.on('messageCreate', (message) => {
 
     case 'battle': {
       const [opponentMention] = args;
-      if (!opponentMention) return message.reply('Usage: `!battle @opponent`');
+      if (!opponentMention) return message.reply('Usage: `!battle @opponent`.');
 
       const opponentId = opponentMention.replace(/[^0-9]/g, '');
       const userPet = pets[userId];
@@ -107,12 +150,56 @@ client.on('messageCreate', (message) => {
       return message.reply(`The winner of the battle is **${winner}**! 🎉`);
     }
 
+    case 'dailyreward': {
+      if (claimDailyReward(userId)) {
+        const food = 'Food'; // You can change the type or randomize it
+        if (pets[userId]) {
+          pets[userId].items.push(food);
+          savePets();
+          return message.reply(`You claimed your daily reward: **${food}**! 🎉`);
+        }
+        return message.reply(`You claimed your daily reward: **${food}**! But you don't have a pet yet.`);
+      } else {
+        return message.reply('You have already claimed your daily reward. Please come back tomorrow!');
+      }
+    }
+
+    case 'shop': {
+      const shopList = SHOP_ITEMS.map(item => `🛒 **${item.name}** - Price: ${item.price} coins`).join('\n');
+      return message.reply(`Welcome to the shop! Here's what you can buy:\n${shopList}`);
+    }
+
+    case 'buy': {
+      const itemName = args.join(' ');
+      const item = SHOP_ITEMS.find(i => i.name.toLowerCase() === itemName.toLowerCase());
+
+      if (!item) return message.reply('Item not found in the shop.');
+
+      if (!pets[userId]) return message.reply('You need to adopt a pet first!');
+
+      // This is a placeholder for checking in-bot currency
+      // Assume users have starting balance of 20 coins for demo purposes
+      const userCurrency = 20;
+
+      if (userCurrency < item.price) {
+        return message.reply('You do not have enough coins to buy this item.');
+      }
+
+      // Deducting coins and adding items would go here
+      pets[userId].items.push(item.name);
+      savePets();
+      return message.reply(`You bought **${item.name}** for ${item.price} coins! 🎉`);
+    }
+
+    case 'leaderboard': {
+      const leaderboard = getLeaderboard();
+      return message.reply(`**Leaderboard**:\n${leaderboard || 'No pets available.'}`);
+    }
+
     default:
-      return message.reply('Unknown command. Try `!adopt`, `!pet`, `!feed`, `!gift`, `!contest`, or `!battle`.');
+      return message.reply('Unknown command. Try `!adopt`, `!pet`, `!feed`, `!gift`, `!contest`, `!battle`, `!dailyreward`, `!shop`, `!buy`, or `!leaderboard`.');
   }
 });
 
 // Login to Discord
 client.login(process.env.DISCORD_TOKEN);
-
-
